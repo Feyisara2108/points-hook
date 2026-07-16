@@ -49,27 +49,29 @@ contract PointsHook is BaseHook, ERC1155 {
     function _afterSwap(
         address,
         PoolKey calldata key,
-        SwapParams calldata swapParams,
+        SwapParams calldata,
         BalanceDelta delta,
         bytes calldata hookData
     ) internal override returns (bytes4, int128) {
         // If this is not an ETH-TOKEN pool with this hook attached, ignore
         if (!key.currency0.isAddressZero()) return (this.afterSwap.selector, 0);
 
-        // We only mint points if user is buying TOKEN with ETH
-        if (!swapParams.zeroForOne) return (this.afterSwap.selector, 0);
+        // We reward both directions of the swap based on the size of the ETH leg:
+        // - Buying TOKEN with ETH (zeroForOne): ETH leaves the user's wallet, so
+        //   delta.amount0() is negative and equals the ETH they *spent*.
+        // - Selling TOKEN for ETH (oneForZero): ETH enters the user's wallet, so
+        //   delta.amount0() is positive and equals the ETH they *received*.
+        //
+        // Either way, the amount of points is based on the magnitude of the ETH
+        // that changed hands. We take the absolute value of amount0 to handle
+        // both signs uniformly.
+        int128 ethAmount = delta.amount0();
+        uint256 ethSwapAmount = ethAmount < 0
+            ? uint256(int256(-ethAmount))
+            : uint256(int256(ethAmount));
 
-        // Mint points equal to 20% of the amount of ETH they spent
-        // Since its a zeroForOne swap:
-        // if amountSpecified < 0:
-        //      this is an "exact input for output" swap
-        //      amount of ETH they spent is equal to |amountSpecified|
-        // if amountSpecified > 0:
-        //      this is an "exact output for input" swap
-        //      amount of ETH they spent is equal to BalanceDelta.amount0()
-
-        uint256 ethSpendAmount = uint256(int256(-delta.amount0()));
-        uint256 pointsForSwap = ethSpendAmount / 5;
+        // Mint points equal to 20% of the ETH that changed hands in the swap
+        uint256 pointsForSwap = ethSwapAmount / 5;
 
         // Mint the points
         _assignPoints(key.toId(), hookData, pointsForSwap);

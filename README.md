@@ -7,6 +7,8 @@ to such kinds of pools where:
 
 every time somebody swaps ETH for TOKEN (i.e. spends ETH, purchases TOKEN) - we issue them some "points"
 
+> Update: the hook now also rewards the other direction — selling TOKEN for ETH earns points on the ETH received (20% either way), by reading the sign of the ETH `BalanceDelta` in `afterSwap`.
+
 > This is not production ready by any means. It is a PoC.
 
 ### Design

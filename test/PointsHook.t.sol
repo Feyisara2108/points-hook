@@ -13,6 +13,7 @@ import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 
 import {Currency, CurrencyLibrary} from "v4-core/types/Currency.sol";
 import {PoolId} from "v4-core/types/PoolId.sol";
+import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
@@ -126,5 +127,49 @@ contract TestPointsHook is Test, Deployers, ERC1155TokenReceiver {
             poolIdUint
         );
         assertEq(pointsBalanceAfterSwap - pointsBalanceOriginal, 2 * 10 ** 14);
+    }
+
+    function test_swap_sell_token_for_eth() public {
+        uint256 poolIdUint = uint256(PoolId.unwrap(key.toId()));
+        uint256 pointsBalanceOriginal = hook.balanceOf(
+            address(this),
+            poolIdUint
+        );
+
+        // Set user address in hook data
+        bytes memory hookData = abi.encode(address(this));
+
+        // Now we swap the other way: sell TOKEN for ETH (oneForZero).
+        // We sell 0.001 TOKEN (exact input). ETH now flows INTO our wallet,
+        // so delta.amount0() is POSITIVE and equals the ETH received.
+        // We should get 20% of the ETH received in points.
+        BalanceDelta swapDelta = swapRouter.swap(
+            key,
+            SwapParams({
+                zeroForOne: false,
+                amountSpecified: -0.001 ether, // Exact input (selling 0.001 TOKEN)
+                sqrtPriceLimitX96: TickMath.MAX_SQRT_PRICE - 1
+            }),
+            PoolSwapTest.TestSettings({
+                takeClaims: false,
+                settleUsingBurn: false
+            }),
+            hookData
+        );
+
+        // ETH received is the positive amount0 of the swap delta
+        uint256 ethReceived = uint256(int256(swapDelta.amount0()));
+        uint256 expectedPoints = ethReceived / 5;
+
+        uint256 pointsBalanceAfterSwap = hook.balanceOf(
+            address(this),
+            poolIdUint
+        );
+        assertEq(
+            pointsBalanceAfterSwap - pointsBalanceOriginal,
+            expectedPoints
+        );
+        // Sanity check: selling actually earned us a non-zero amount of points
+        assertGt(expectedPoints, 0);
     }
 }
